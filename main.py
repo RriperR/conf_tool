@@ -1,80 +1,60 @@
-import re
 import json
+import re
 import sys
 
-# Словарь для хранения констант
-constants = {}
+def parse_line(line):
+    line = line.strip()
+    if line.startswith('//'):
+        return None  # Однострочный комментарий, игнорируем
+    match = re.match(r'([\w_]+)\s+is\s+(.+);', line)
+    if match:
+        name, value = match.groups()
+        return name, eval_value(value)
+    else:
+        raise SyntaxError(f"Ошибка синтаксиса: {line}")
 
+def eval_value(value):
+    if re.match(r'^\[.*\]$', value):
+        return parse_array(value)
+    elif re.match(r'^\d+$', value):
+        return int(value)
+    elif re.match(r'^"[^"]*"$', value):  # Обработка строковых значений
+        return value[1:-1]  # Убираем кавычки
+    elif re.match(r'^\$[\w_]+\s*\d*\s*[\+\-\*/]\s*\$$', value):
+        return eval_expression(value)
+    else:
+        raise ValueError(f"Неподдерживаемое значение: {value}")
 
-# Функция для вычисления постфиксных выражений
-def eval_postfix(expression):
-    stack = []
-    for token in expression:
-        if token.isdigit():
-            stack.append(int(token))
-        elif token == '+':
-            b = stack.pop()
-            a = stack.pop()
-            stack.append(a + b)
-        elif token == '-':
-            b = stack.pop()
-            a = stack.pop()
-            stack.append(a - b)
-        elif token == '*':
-            b = stack.pop()
-            a = stack.pop()
-            stack.append(a * b)
-        elif token == 'pow':
-            b = stack.pop()
-            a = stack.pop()
-            stack.append(pow(a, b))
-    return stack[0]
+def parse_array(value):
+    return [eval_value(v.strip()) for v in value[1:-1].split(';')]
 
+def eval_expression(value):
+    # Пример реализации для обработки математических выражений
+    expression = value.strip('$').replace('$', '')
+    return eval(expression)  # Внимание: использовать eval с осторожностью!
 
-# Парсинг конфигурационного файла
-def parse_file(filepath):
-    with open(filepath, 'r') as file:
-        lines = file.readlines()
+def process_file(file_path):
+    config = {}
+    with open(file_path, 'r') as f:
+        for line in f:
+            try:
+                result = parse_line(line)
+                if result:
+                    name, value = result
+                    config[name] = value
+            except (SyntaxError, ValueError) as e:
+                print(f"Ошибка: {e}")
+                sys.exit(1)
+    return config
 
-    for line in lines:
-        line = line.strip()
-        # Игнорируем комментарии
-        if line.startswith('//') or not line:
-            continue
-        # Обработка объявления константы
-        if 'is' in line:
-            name, value = line.split('is')
-            name = name.strip()
-            value = value.strip().rstrip(';')
-            if value.startswith('$') and value.endswith('$'):
-                # Постфиксная нотация
-                expression = value[1:-1].split()
-                result = eval_postfix(expression)
-                constants[name] = result
-            else:
-                # Присваиваем числовое значение
-                constants[name] = int(value)
-        elif line.startswith('[') and line.endswith(']'):
-            array_values = line[1:-1].split(';')
-            array_values = [int(v.strip()) for v in array_values]
-            constants["array"] = array_values
-
-
-# Генерация JSON
-def generate_json():
-    return json.dumps(constants, indent=4)
-
-
-# Главная функция
 def main():
     if len(sys.argv) != 2:
-        print("Usage: python script.py <path_to_file>")
+        print("Использование: python script.py <путь к файлу>")
         sys.exit(1)
 
-    filepath = sys.argv[1]
-    parse_file(filepath)
-    print(generate_json())
+    file_path = sys.argv[1]
+    config = process_file(file_path)
+    print(json.dumps(config, indent=4))
 
-
-if __name__ == "main":
+if __name__ == "__main__":
     main()
