@@ -6,6 +6,7 @@ class ConfigParser:
     def __init__(self):
         self.constants = {}
         self.result = {}
+        self.expression_count = 0  # Счетчик для выражений
 
     def parse(self, content):
         lines = content.splitlines()
@@ -26,6 +27,7 @@ class ConfigParser:
         if match:
             name, value = match.groups()
             value = value.strip()
+            # Проверка на вещественное число
             if re.match(r"^-?\d+\.\d+$", value):  # Вещественное число
                 self.constants[name] = float(value)
             elif re.match(r"^-?\d+$", value):  # Целое число
@@ -37,30 +39,55 @@ class ConfigParser:
             else:
                 raise SyntaxError(f"Invalid constant value: {value}")
 
+            # Сохранение констант в результат
             self.result[name] = self.constants[name]
         else:
             raise SyntaxError(f"Invalid constant declaration: {line}")
 
     def parse_array(self, value):
-        elements = value[1:-1].split(";")
-        result = []
-        for element in elements:
+        # Функция для рекурсивного парсинга массивов
+        def parse_element(element):
             element = element.strip()
             if element.startswith('"') and element.endswith('"'):  # Строка
-                result.append(element.strip('"'))
+                return element.strip('"')
+            elif element.startswith('[') and element.endswith(']'):  # Вложенный массив
+                return parse_array(element)
             elif re.match(r"^-?\d+\.\d+$", element):  # Вещественное число
-                result.append(float(element))
+                return float(element)
             elif re.match(r"^-?\d+$", element):  # Целое число
-                result.append(int(element))
+                return int(element)
             else:
                 raise SyntaxError(f"Invalid array element: {element}")
-        return result
+
+        def parse_array(array_str):
+            elements = []
+            stack = []
+            current = ''
+            for char in array_str[1:-1]:
+                if char == '[':
+                    stack.append('[')
+                    current += char
+                elif char == ']':
+                    stack.pop()
+                    current += char
+                elif char == ';' and not stack:
+                    elements.append(current.strip())
+                    current = ''
+                else:
+                    current += char
+
+            if current:
+                elements.append(current.strip())
+
+            return [parse_element(element) for element in elements]
+
+        return parse_array(value)
 
     def evaluate_expression(self, line):
         expression = line[1:-1].split()
         stack = []
         for token in expression:
-            if re.match(r"^-?\d+(\.\d+)?$", token):  # Проверка на вещественное число
+            if re.match(r"^-?\d+(\.\d+)?$", token):
                 stack.append(float(token))
             elif token in self.constants:
                 stack.append(self.constants[token])
@@ -79,9 +106,9 @@ class ConfigParser:
             else:
                 raise SyntaxError(f"Unknown token: {token}")
 
-        # Результат вычисления выражения
+        self.expression_count += 1
         result_value = stack[0]
-        self.result[f"expression_{len(self.result) + 1}"] = result_value
+        self.result[f"expression_{self.expression_count}"] = result_value
 
 
 def main():
@@ -101,7 +128,6 @@ def main():
         print(f"Error: File '{args.input_file}' not found.")
     except SyntaxError as e:
         print(f"Syntax error: {e}")
-
 
 if __name__ == "__main__":
     main()
